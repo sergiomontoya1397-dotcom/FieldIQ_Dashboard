@@ -15,7 +15,8 @@ st.markdown("""
 .red {border-left:8px solid #E53935;}
 .yellow {border-left:8px solid #FDD835;}
 .green {border-left:8px solid #43A047;}
-.blue {border-left:8px solid #1E88E5;}
+.cyan {border-left:8px solid #29B6F6;}
+.blue {border-left:8px solid #000080;}
 .eval-bad {background:#ffebee;border:2px solid #e53935;border-radius:18px;padding:20px;color:#b71c1c;}
 .eval-good {background:#e8f5e9;border:2px solid #43a047;border-radius:18px;padding:20px;color:#1b5e20;}
 </style>
@@ -25,7 +26,6 @@ st.markdown('<div class="main-title">🌱 Aplicación Field-IQ</div>', unsafe_al
 
 st.sidebar.header("⚙️ Parámetros")
 objetivo = st.sidebar.number_input("Dosis objetivo", value=150)
-tolerancia = st.sidebar.slider("Tolerancia %", 1, 20, 5)
 
 uploaded_file = st.file_uploader("Sube tu shapefile en .zip", type=["zip"])
 
@@ -65,24 +65,46 @@ if uploaded_file:
     gdf_mapa["AppliedRat"] = pd.to_numeric(gdf_mapa["AppliedRat"], errors="coerce")
     gdf_mapa = gdf_mapa.dropna(subset=["AppliedRat"])
 
-    min_ok = objetivo * (1 - tolerancia / 100)
-    max_ok = objetivo * (1 + tolerancia / 100)
+    # Límites de clasificación
+    limite_menos_10 = objetivo * 0.90
+    limite_menos_5 = objetivo * 0.95
+    limite_mas_5 = objetivo * 1.05
+    limite_mas_10 = objetivo * 1.10
 
     def clasificar(valor):
-        if valor < min_ok:
-            return "Sub-aplicado"
-        elif valor <= max_ok:
-            return "Óptimo"
+        if valor < limite_menos_10:
+            return "Clase 3: < -10%"
+        elif valor < limite_menos_5:
+            return "Clase 2: -5% a -10%"
+        elif valor <= limite_mas_5:
+            return "Clase 1: ±5%"
+        elif valor <= limite_mas_10:
+            return "Clase 4: +5% a +10%"
         else:
-            return "Sobre-aplicado"
+            return "Clase 5: > +10%"
 
     gdf_mapa["Categoria"] = gdf_mapa["AppliedRat"].apply(clasificar)
+
+    colores = {
+        "Clase 3: < -10%": "#E53935",
+        "Clase 2: -5% a -10%": "#FDD835",
+        "Clase 1: ±5%": "#43A047",
+        "Clase 4: +5% a +10%": "#29B6F6",
+        "Clase 5: > +10%": "#000080"
+    }
+
+    orden = [
+        "Clase 3: < -10%",
+        "Clase 2: -5% a -10%",
+        "Clase 1: ±5%",
+        "Clase 4: +5% a +10%",
+        "Clase 5: > +10%"
+    ]
 
     resumen = gdf_mapa.groupby("Categoria")["Area_ha"].sum().reset_index()
     total = resumen["Area_ha"].sum()
     resumen["Porcentaje"] = resumen["Area_ha"] / total * 100
 
-    orden = ["Sub-aplicado", "Óptimo", "Sobre-aplicado"]
     resumen["Categoria"] = pd.Categorical(resumen["Categoria"], categories=orden, ordered=True)
     resumen = resumen.sort_values("Categoria")
 
@@ -90,24 +112,28 @@ if uploaded_file:
         fila = resumen[resumen["Categoria"] == cat]
         return 0 if fila.empty else float(fila[col].iloc[0])
 
-    sub_area = get_val("Sub-aplicado", "Area_ha")
-    opt_area = get_val("Óptimo", "Area_ha")
-    sob_area = get_val("Sobre-aplicado", "Area_ha")
+    area_rojo = get_val("Clase 3: < -10%", "Area_ha")
+    area_amarillo = get_val("Clase 2: -5% a -10%", "Area_ha")
+    area_verde = get_val("Clase 1: ±5%", "Area_ha")
+    area_celeste = get_val("Clase 4: +5% a +10%", "Area_ha")
+    area_azul = get_val("Clase 5: > +10%", "Area_ha")
 
-    sub_pct = get_val("Sub-aplicado", "Porcentaje")
-    opt_pct = get_val("Óptimo", "Porcentaje")
-    sob_pct = get_val("Sobre-aplicado", "Porcentaje")
+    pct_rojo = get_val("Clase 3: < -10%", "Porcentaje")
+    pct_amarillo = get_val("Clase 2: -5% a -10%", "Porcentaje")
+    pct_verde = get_val("Clase 1: ±5%", "Porcentaje")
+    pct_celeste = get_val("Clase 4: +5% a +10%", "Porcentaje")
+    pct_azul = get_val("Clase 5: > +10%", "Porcentaje")
 
-    sobre_total = sob_pct
-    sub_total = sub_pct
+    sobre_total = pct_celeste + pct_azul
+    sub_total = pct_rojo + pct_amarillo
 
-    if opt_pct >= 85:
+    if pct_verde >= 85:
         evaluacion = "EXCELENTE"
         eval_class = "eval-good"
-    elif opt_pct >= 70:
+    elif pct_verde >= 70:
         evaluacion = "BUENA"
         eval_class = "eval-good"
-    elif opt_pct >= 50:
+    elif pct_verde >= 50:
         evaluacion = "REGULAR"
         eval_class = "eval-bad"
     else:
@@ -116,20 +142,18 @@ if uploaded_file:
 
     st.subheader("📊 Resumen de aplicación")
 
-    c1, c2, c3, c4 = st.columns(4)
-
+    c1, c2, c3 = st.columns(3)
     c1.markdown(f'<div class="card blue"><h4>Área total</h4><h2>{total:.2f} ha</h2></div>', unsafe_allow_html=True)
-    c2.markdown(f'<div class="card red"><h4>Sub-aplicado</h4><h2>{sub_area:.2f} ha</h2><b>{sub_pct:.2f}%</b></div>', unsafe_allow_html=True)
-    c3.markdown(f'<div class="card yellow"><h4>Óptimo</h4><h2>{opt_area:.2f} ha</h2><b>{opt_pct:.2f}%</b></div>', unsafe_allow_html=True)
-    c4.markdown(f'<div class="card green"><h4>Sobre-aplicado</h4><h2>{sob_area:.2f} ha</h2><b>{sob_pct:.2f}%</b></div>', unsafe_allow_html=True)
+    c2.markdown(f'<div class="card green"><h4>Rango óptimo ±5%</h4><h2>{area_verde:.2f} ha</h2><b>{pct_verde:.2f}%</b></div>', unsafe_allow_html=True)
+    c3.markdown(f'<div class="card red"><h4>Evaluación</h4><h2>{evaluacion}</h2></div>', unsafe_allow_html=True)
+
+    c4, c5, c6, c7 = st.columns(4)
+    c4.markdown(f'<div class="card red"><h4>< -10%</h4><h2>{area_rojo:.2f} ha</h2><b>{pct_rojo:.2f}%</b></div>', unsafe_allow_html=True)
+    c5.markdown(f'<div class="card yellow"><h4>-5% a -10%</h4><h2>{area_amarillo:.2f} ha</h2><b>{pct_amarillo:.2f}%</b></div>', unsafe_allow_html=True)
+    c6.markdown(f'<div class="card cyan"><h4>+5% a +10%</h4><h2>{area_celeste:.2f} ha</h2><b>{pct_celeste:.2f}%</b></div>', unsafe_allow_html=True)
+    c7.markdown(f'<div class="card blue"><h4>> +10%</h4><h2>{area_azul:.2f} ha</h2><b>{pct_azul:.2f}%</b></div>', unsafe_allow_html=True)
 
     st.subheader("🗺️ Mapa de aplicación")
-
-    colores = {
-        "Sub-aplicado": "#E53935",
-        "Óptimo": "#FDD835",
-        "Sobre-aplicado": "#43A047"
-    }
 
     centro = [
         gdf_mapa.geometry.centroid.y.mean(),
@@ -165,11 +189,7 @@ if uploaded_file:
             values="Area_ha",
             names="Categoria",
             color="Categoria",
-            color_discrete_map={
-                "Sub-aplicado": "#E53935",
-                "Óptimo": "#FDD835",
-                "Sobre-aplicado": "#43A047"
-            },
+            color_discrete_map=colores,
             hole=0.25
         )
 
@@ -182,8 +202,8 @@ if uploaded_file:
         tabla = resumen.copy()
         tabla["Área (ha)"] = tabla["Area_ha"].round(3)
         tabla["% del total"] = tabla["Porcentaje"].round(2)
-        tabla = tabla[["Categoria", "Área (ha)", "% del total"]]
 
+        tabla = tabla[["Categoria", "Área (ha)", "% del total"]]
         st.dataframe(tabla, use_container_width=True)
 
         csv = tabla.to_csv(index=False).encode("utf-8")
@@ -199,9 +219,9 @@ if uploaded_file:
     st.markdown(f"""
     <div class="{eval_class}">
         <h2>Evaluación: {evaluacion}</h2>
-        <p><b>{opt_pct:.2f}%</b> del área está dentro del rango óptimo.</p>
-        <p><b>{sob_pct:.2f}%</b> del área está sobre-aplicada.</p>
-        <p><b>{sub_pct:.2f}%</b> del área está sub-aplicada.</p>
+        <p><b>{pct_verde:.2f}%</b> del área está dentro del rango óptimo ±5%.</p>
+        <p><b>{sub_total:.2f}%</b> del área está sub-aplicada.</p>
+        <p><b>{sobre_total:.2f}%</b> del área está sobre-aplicada.</p>
     </div>
     """, unsafe_allow_html=True)
 
