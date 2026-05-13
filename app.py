@@ -10,26 +10,92 @@ st.set_page_config(page_title="Field-IQ Dashboard", layout="wide")
 
 st.markdown("""
 <style>
-.main-title {font-size:42px;font-weight:800;color:#1b263b;}
-.card {padding:22px;border-radius:18px;background:white;box-shadow:0 4px 14px rgba(0,0,0,0.08);}
-.red {border-left:8px solid #E53935;}
-.yellow {border-left:8px solid #FDD835;}
-.green {border-left:8px solid #43A047;}
-.cyan {border-left:8px solid #29B6F6;}
-.blue {border-left:8px solid #000080;}
-.eval-bad {background:#ffebee;border:2px solid #e53935;border-radius:18px;padding:20px;color:#b71c1c;}
-.eval-good {background:#e8f5e9;border:2px solid #43a047;border-radius:18px;padding:20px;color:#1b5e20;}
+.report-title {
+    background:#064d1b;
+    color:white;
+    text-align:center;
+    padding:18px;
+    border-radius:10px;
+    font-size:36px;
+    font-weight:800;
+}
+.section-title {
+    background:#064d1b;
+    color:white;
+    padding:8px 14px;
+    border-radius:8px;
+    font-weight:700;
+    text-align:center;
+}
+.card {
+    background:white;
+    border-radius:12px;
+    padding:18px;
+    box-shadow:0 3px 12px rgba(0,0,0,0.12);
+    border:1px solid #ddd;
+}
+.legend-row {
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin:10px 0;
+}
+.color-box {
+    width:28px;
+    height:22px;
+    border:1px solid #555;
+}
+.eval-good {
+    background:#e8f5e9;
+    border:2px solid #2e7d32;
+    border-radius:14px;
+    padding:18px;
+    color:#1b5e20;
+    text-align:center;
+}
+.eval-bad {
+    background:#ffebee;
+    border:2px solid #c62828;
+    border-radius:14px;
+    padding:18px;
+    color:#b71c1c;
+    text-align:center;
+}
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-title">🌱 Aplicación Field-IQ</div>', unsafe_allow_html=True)
-
 st.sidebar.header("⚙️ Parámetros")
 objetivo = st.sidebar.number_input("Dosis objetivo", value=150)
+nombre_lote = st.sidebar.text_input("Nombre del lote", value="Lote 65–66")
+unidad = st.sidebar.text_input("Unidad", value="L/ha")
 
 uploaded_file = st.file_uploader("Sube tu shapefile en .zip", type=["zip"])
 
-if uploaded_file:
+colores = {
+    "Clase 3: < -10%": "#FF0000",
+    "Clase 2: -5% a -10%": "#FFFF00",
+    "Clase 1: ±5%": "#22C928",
+    "Clase 4: +5% a +10%": "#29B6F6",
+    "Clase 5: > +10%": "#000080",
+}
+
+orden = [
+    "Clase 3: < -10%",
+    "Clase 2: -5% a -10%",
+    "Clase 1: ±5%",
+    "Clase 4: +5% a +10%",
+    "Clase 5: > +10%",
+]
+
+nombres_cortos = {
+    "Clase 3: < -10%": f"< {objetivo*0.90:.1f}",
+    "Clase 2: -5% a -10%": f"{objetivo*0.90:.1f} - {objetivo*0.95:.1f}",
+    "Clase 1: ±5%": f"{objetivo*0.95:.1f} - {objetivo*1.05:.1f}",
+    "Clase 4: +5% a +10%": f"{objetivo*1.05:.1f} - {objetivo*1.10:.1f}",
+    "Clase 5: > +10%": f"> {objetivo*1.10:.1f}",
+}
+
+def cargar_shapefile(uploaded_file):
     temp_dir = tempfile.mkdtemp()
     zip_path = os.path.join(temp_dir, uploaded_file.name)
 
@@ -45,116 +111,25 @@ if uploaded_file:
             if file.lower().endswith(".shp"):
                 shp_file = os.path.join(root, file)
 
-    if not shp_file:
+    if shp_file is None:
         st.error("No se encontró archivo .shp dentro del ZIP.")
         st.stop()
 
-    gdf_original = gpd.read_file(shp_file, engine="pyogrio")
+    return gpd.read_file(shp_file, engine="pyogrio")
 
-    if "AppliedRat" not in gdf_original.columns:
-        st.error("No se encontró la columna 'AppliedRat'.")
-        st.write(list(gdf_original.columns))
-        st.stop()
-
-    st.success("Shapefile cargado correctamente")
-
-    gdf_mapa = gdf_original.to_crs(epsg=4326)
-    gdf_area = gdf_original.to_crs(epsg=3857)
-
-    gdf_mapa["Area_ha"] = gdf_area.geometry.area / 10000
-    gdf_mapa["AppliedRat"] = pd.to_numeric(gdf_mapa["AppliedRat"], errors="coerce")
-    gdf_mapa = gdf_mapa.dropna(subset=["AppliedRat"])
-
-    # Límites de clasificación
-    limite_menos_10 = objetivo * 0.90
-    limite_menos_5 = objetivo * 0.95
-    limite_mas_5 = objetivo * 1.05
-    limite_mas_10 = objetivo * 1.10
-
-    def clasificar(valor):
-        if valor < limite_menos_10:
-            return "Clase 3: < -10%"
-        elif valor < limite_menos_5:
-            return "Clase 2: -5% a -10%"
-        elif valor <= limite_mas_5:
-            return "Clase 1: ±5%"
-        elif valor <= limite_mas_10:
-            return "Clase 4: +5% a +10%"
-        else:
-            return "Clase 5: > +10%"
-
-    gdf_mapa["Categoria"] = gdf_mapa["AppliedRat"].apply(clasificar)
-
-    colores = {
-        "Clase 3: < -10%": "#E53935",
-        "Clase 2: -5% a -10%": "#FDD835",
-        "Clase 1: ±5%": "#43A047",
-        "Clase 4: +5% a +10%": "#29B6F6",
-        "Clase 5: > +10%": "#000080"
-    }
-
-    orden = [
-        "Clase 3: < -10%",
-        "Clase 2: -5% a -10%",
-        "Clase 1: ±5%",
-        "Clase 4: +5% a +10%",
-        "Clase 5: > +10%"
-    ]
-
-    resumen = gdf_mapa.groupby("Categoria")["Area_ha"].sum().reset_index()
-    total = resumen["Area_ha"].sum()
-    resumen["Porcentaje"] = resumen["Area_ha"] / total * 100
-
-    resumen["Categoria"] = pd.Categorical(resumen["Categoria"], categories=orden, ordered=True)
-    resumen = resumen.sort_values("Categoria")
-
-    def get_val(cat, col):
-        fila = resumen[resumen["Categoria"] == cat]
-        return 0 if fila.empty else float(fila[col].iloc[0])
-
-    area_rojo = get_val("Clase 3: < -10%", "Area_ha")
-    area_amarillo = get_val("Clase 2: -5% a -10%", "Area_ha")
-    area_verde = get_val("Clase 1: ±5%", "Area_ha")
-    area_celeste = get_val("Clase 4: +5% a +10%", "Area_ha")
-    area_azul = get_val("Clase 5: > +10%", "Area_ha")
-
-    pct_rojo = get_val("Clase 3: < -10%", "Porcentaje")
-    pct_amarillo = get_val("Clase 2: -5% a -10%", "Porcentaje")
-    pct_verde = get_val("Clase 1: ±5%", "Porcentaje")
-    pct_celeste = get_val("Clase 4: +5% a +10%", "Porcentaje")
-    pct_azul = get_val("Clase 5: > +10%", "Porcentaje")
-
-    sobre_total = pct_celeste + pct_azul
-    sub_total = pct_rojo + pct_amarillo
-
-    if pct_verde >= 85:
-        evaluacion = "EXCELENTE"
-        eval_class = "eval-good"
-    elif pct_verde >= 70:
-        evaluacion = "BUENA"
-        eval_class = "eval-good"
-    elif pct_verde >= 50:
-        evaluacion = "REGULAR"
-        eval_class = "eval-bad"
+def clasificar(valor):
+    if valor < objetivo * 0.90:
+        return "Clase 3: < -10%"
+    elif valor < objetivo * 0.95:
+        return "Clase 2: -5% a -10%"
+    elif valor <= objetivo * 1.05:
+        return "Clase 1: ±5%"
+    elif valor <= objetivo * 1.10:
+        return "Clase 4: +5% a +10%"
     else:
-        evaluacion = "DEFICIENTE"
-        eval_class = "eval-bad"
+        return "Clase 5: > +10%"
 
-    st.subheader("📊 Resumen de aplicación")
-
-    c1, c2, c3 = st.columns(3)
-    c1.markdown(f'<div class="card blue"><h4>Área total</h4><h2>{total:.2f} ha</h2></div>', unsafe_allow_html=True)
-    c2.markdown(f'<div class="card green"><h4>Rango óptimo ±5%</h4><h2>{area_verde:.2f} ha</h2><b>{pct_verde:.2f}%</b></div>', unsafe_allow_html=True)
-    c3.markdown(f'<div class="card red"><h4>Evaluación</h4><h2>{evaluacion}</h2></div>', unsafe_allow_html=True)
-
-    c4, c5, c6, c7 = st.columns(4)
-    c4.markdown(f'<div class="card red"><h4>< -10%</h4><h2>{area_rojo:.2f} ha</h2><b>{pct_rojo:.2f}%</b></div>', unsafe_allow_html=True)
-    c5.markdown(f'<div class="card yellow"><h4>-5% a -10%</h4><h2>{area_amarillo:.2f} ha</h2><b>{pct_amarillo:.2f}%</b></div>', unsafe_allow_html=True)
-    c6.markdown(f'<div class="card cyan"><h4>+5% a +10%</h4><h2>{area_celeste:.2f} ha</h2><b>{pct_celeste:.2f}%</b></div>', unsafe_allow_html=True)
-    c7.markdown(f'<div class="card blue"><h4>> +10%</h4><h2>{area_azul:.2f} ha</h2><b>{pct_azul:.2f}%</b></div>', unsafe_allow_html=True)
-
-    st.subheader("🗺️ Mapa de aplicación")
-
+def crear_mapa(gdf_mapa):
     centro = [
         gdf_mapa.geometry.centroid.y.mean(),
         gdf_mapa.geometry.centroid.x.mean()
@@ -171,75 +146,172 @@ if uploaded_file:
             "fillOpacity": 0.75,
         },
         tooltip=folium.GeoJsonTooltip(
-            fields=["AppliedRat", "Categoria", "Area_ha"],
-            aliases=["Dosis:", "Categoría:", "Área ha:"],
+            fields=["AppliedRat", "Rango", "Area_ha"],
+            aliases=["Dosis:", "Rango:", "Área ha:"],
             localize=True
         )
     ).add_to(m)
 
-    st_folium(m, width=1200, height=600)
+    return m
 
-    col_graf, col_tabla = st.columns([1, 1])
+def leyenda_html():
+    html = '<div class="card"><div class="section-title">LEYENDA</div><h4>Rango de dosis</h4>'
+    for cat in orden:
+        html += f"""
+        <div class="legend-row">
+            <div class="color-box" style="background:{colores[cat]}"></div>
+            <span>{nombres_cortos[cat]}</span>
+        </div>
+        """
+    html += "</div>"
+    return html
 
-    with col_graf:
-        st.subheader("🥧 Distribución porcentual")
+if uploaded_file:
+    gdf_original = cargar_shapefile(uploaded_file)
 
-        fig = px.pie(
-            resumen,
-            values="Area_ha",
-            names="Categoria",
-            color="Categoria",
-            color_discrete_map=colores,
-            hole=0.25
-        )
+    if "AppliedRat" not in gdf_original.columns:
+        st.error("No se encontró la columna 'AppliedRat'.")
+        st.write(list(gdf_original.columns))
+        st.stop()
 
-        fig.update_traces(textposition="inside", textinfo="percent+label")
-        st.plotly_chart(fig, use_container_width=True)
+    gdf_mapa = gdf_original.to_crs(epsg=4326)
+    gdf_area = gdf_original.to_crs(epsg=3857)
 
-    with col_tabla:
-        st.subheader("📋 Tabla de porcentajes")
+    gdf_mapa["Area_ha"] = gdf_area.geometry.area / 10000
+    gdf_mapa["AppliedRat"] = pd.to_numeric(gdf_mapa["AppliedRat"], errors="coerce")
+    gdf_mapa = gdf_mapa.dropna(subset=["AppliedRat"])
 
-        tabla = resumen.copy()
-        tabla["Área (ha)"] = tabla["Area_ha"].round(3)
-        tabla["% del total"] = tabla["Porcentaje"].round(2)
+    gdf_mapa["Categoria"] = gdf_mapa["AppliedRat"].apply(clasificar)
+    gdf_mapa["Rango"] = gdf_mapa["Categoria"].map(nombres_cortos)
 
-        tabla = tabla[["Categoria", "Área (ha)", "% del total"]]
-        st.dataframe(tabla, use_container_width=True)
+    resumen = gdf_mapa.groupby("Categoria")["Area_ha"].sum().reset_index()
+    total = resumen["Area_ha"].sum()
+    resumen["Porcentaje"] = resumen["Area_ha"] / total * 100
+    resumen["Categoria"] = pd.Categorical(resumen["Categoria"], categories=orden, ordered=True)
+    resumen = resumen.sort_values("Categoria")
+    resumen["Rango"] = resumen["Categoria"].map(nombres_cortos)
 
-        csv = tabla.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            "⬇️ Descargar tabla CSV",
-            csv,
-            "tabla_porcentajes.csv",
-            "text/csv"
-        )
+    def get_pct(cat):
+        fila = resumen[resumen["Categoria"] == cat]
+        return 0 if fila.empty else float(fila["Porcentaje"].iloc[0])
 
-    st.subheader("🧾 Evaluación técnica")
+    opt_pct = get_pct("Clase 1: ±5%")
+    sub_pct = get_pct("Clase 3: < -10%") + get_pct("Clase 2: -5% a -10%")
+    sobre_pct = get_pct("Clase 4: +5% a +10%") + get_pct("Clase 5: > +10%")
 
-    st.markdown(f"""
-    <div class="{eval_class}">
-        <h2>Evaluación: {evaluacion}</h2>
-        <p><b>{pct_verde:.2f}%</b> del área está dentro del rango óptimo ±5%.</p>
-        <p><b>{sub_total:.2f}%</b> del área está sub-aplicada.</p>
-        <p><b>{sobre_total:.2f}%</b> del área está sobre-aplicada.</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.subheader("📌 Recomendaciones")
-
-    if evaluacion == "DEFICIENTE":
-        st.warning("""
-        La aplicación presenta baja uniformidad.  
-        Se recomienda recalibrar el equipo, revisar caudal, velocidad de aplicación y solape entre pasadas.
-        """)
-    elif evaluacion == "REGULAR":
-        st.info("""
-        La aplicación es aceptable, pero requiere ajustes para mejorar la uniformidad.
-        """)
+    if opt_pct >= 85:
+        evaluacion = "EXCELENTE"
+        eval_class = "eval-good"
+    elif opt_pct >= 70:
+        evaluacion = "BUENA"
+        eval_class = "eval-good"
+    elif opt_pct >= 50:
+        evaluacion = "REGULAR"
+        eval_class = "eval-bad"
     else:
-        st.success("""
-        La aplicación presenta buena uniformidad dentro del rango objetivo.
-        """)
+        evaluacion = "DEFICIENTE"
+        eval_class = "eval-bad"
+
+    fig = px.pie(
+        resumen,
+        values="Area_ha",
+        names="Rango",
+        color="Categoria",
+        color_discrete_map=colores,
+        hole=0.25
+    )
+    fig.update_traces(textposition="inside", textinfo="percent")
+
+    tabla = resumen.copy()
+    tabla["Área (ha)"] = tabla["Area_ha"].round(3)
+    tabla["% del total"] = tabla["Porcentaje"].round(2)
+    tabla = tabla[["Rango", "Área (ha)", "% del total"]]
+
+    tab1, tab2 = st.tabs(["📊 Dashboard interactivo", "📄 Reporte para cliente"])
+
+    with tab1:
+        st.title("🌱 Aplicación Field-IQ")
+        st.success("Shapefile cargado correctamente")
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Área total", f"{total:.2f} ha")
+        c2.metric("Dentro de ±5%", f"{opt_pct:.2f}%")
+        c3.metric("Sub-aplicado", f"{sub_pct:.2f}%")
+        c4.metric("Sobre-aplicado", f"{sobre_pct:.2f}%")
+
+        st.subheader("🗺️ Mapa de aplicación")
+        st_folium(crear_mapa(gdf_mapa), width=1200, height=600)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("🥧 Distribución porcentual")
+            st.plotly_chart(fig, use_container_width=True)
+        with col2:
+            st.subheader("📋 Tabla de porcentajes")
+            st.dataframe(tabla, use_container_width=True)
+
+    with tab2:
+        st.markdown(
+            f'<div class="report-title">{nombre_lote.upper()} — DOSIS {objetivo} {unidad}</div>',
+            unsafe_allow_html=True
+        )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        left, right = st.columns([1, 3])
+
+        with left:
+            st.markdown(leyenda_html(), unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="card">
+                <div class="section-title">INFORMACIÓN</div>
+                <p><b>Lote:</b> {nombre_lote}</p>
+                <p><b>Dosis aplicada:</b> {objetivo} {unidad}</p>
+                <p><b>Unidad:</b> {unidad}</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with right:
+            st.markdown('<div class="section-title">MAPA DE DISTRIBUCIÓN DE DOSIS</div>', unsafe_allow_html=True)
+            st_folium(crear_mapa(gdf_mapa), width=950, height=520)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        col_g, col_t = st.columns(2)
+
+        with col_g:
+            st.markdown('<div class="section-title">DISTRIBUCIÓN PORCENTUAL POR RANGO</div>', unsafe_allow_html=True)
+            st.plotly_chart(fig, use_container_width=True)
+
+        with col_t:
+            st.markdown('<div class="section-title">TABLA DE PORCENTAJES DE ÁREA POR RANGO</div>', unsafe_allow_html=True)
+            st.dataframe(tabla, use_container_width=True)
+            st.markdown(f"### TOTAL: **{total:.3f} ha**")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        r1, r2 = st.columns([2, 1])
+
+        with r1:
+            st.markdown(f"""
+            <div class="card">
+                <div class="section-title">RESUMEN E INTERPRETACIÓN</div>
+                <ul>
+                    <li><b>{opt_pct:.2f}%</b> del área está dentro del rango óptimo ±5%.</li>
+                    <li><b>{sub_pct:.2f}%</b> del área está sub-aplicada.</li>
+                    <li><b>{sobre_pct:.2f}%</b> del área está sobre-aplicada.</li>
+                    <li>La evaluación se basa en el porcentaje dentro del rango óptimo.</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with r2:
+            st.markdown(f"""
+            <div class="{eval_class}">
+                <h4>CALIDAD DE APLICACIÓN</h4>
+                <h1>{evaluacion}</h1>
+            </div>
+            """, unsafe_allow_html=True)
 
 else:
     st.info("Carga un shapefile comprimido en .zip para comenzar.")
