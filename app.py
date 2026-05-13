@@ -10,7 +10,7 @@ from streamlit_folium import st_folium
 
 st.set_page_config(layout="wide")
 
-st.title("🌱 Dashboard de Fertilización")
+st.title("🌱 Aplicación Field-IQ")
 
 # Parámetros
 st.sidebar.header("⚙️ Parámetros")
