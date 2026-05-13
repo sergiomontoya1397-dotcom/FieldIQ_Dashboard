@@ -38,3 +38,4 @@ st.plotly_chart(fig, use_container_width=True)
 
 # Tabla
 st.dataframe(df)
+archivo = st.file_uploader("Sube tu shapefile en .zip", type=["zip"])
