@@ -5,3 +5,10 @@ geopandas
 folium
 streamlit-folium
 matplotlib
+streamlit
+pandas
+plotly
+geopandas
+fiona
+pyproj
+shapely
