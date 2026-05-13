@@ -1,41 +1,54 @@
 import streamlit as st
+import geopandas as gpd
 import pandas as pd
 import plotly.express as px
+import tempfile
+import zipfile
+import os
 
 st.set_page_config(layout="wide")
 
 st.title("🌱 Dashboard de Fertilización")
 
-# Datos ejemplo
-data = {
-    "Rango": ["Sub-aplicado", "Óptimo", "Sobre-aplicado"],
-    "Área": [0.931, 5.356, 27.862]
-}
-
-df = pd.DataFrame(data)
-
-# KPIs
-col1, col2, col3 = st.columns(3)
-
-col1.metric("Sub-aplicado", "0.931 ha")
-col2.metric("Óptimo", "5.356 ha")
-col3.metric("Sobre-aplicado", "27.862 ha")
-
-# Gráfico
-fig = px.pie(
-    df,
-    values="Área",
-    names="Rango",
-    color="Rango",
-    color_discrete_map={
-        "Sub-aplicado":"red",
-        "Óptimo":"yellow",
-        "Sobre-aplicado":"green"
-    }
+# Upload ZIP
+uploaded_file = st.file_uploader(
+    "Sube tu shapefile en .zip",
+    type=["zip"]
 )
 
-st.plotly_chart(fig, use_container_width=True)
+if uploaded_file:
 
-# Tabla
-st.dataframe(df)
-archivo = st.file_uploader("Sube tu shapefile en .zip", type=["zip"])
+    # carpeta temporal
+    temp_dir = tempfile.mkdtemp()
+
+    zip_path = os.path.join(temp_dir, uploaded_file.name)
+
+    with open(zip_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+
+    # extraer zip
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        zip_ref.extractall(temp_dir)
+
+    # buscar .shp
+    shp_file = None
+
+    for file in os.listdir(temp_dir):
+        if file.endswith(".shp"):
+            shp_file = os.path.join(temp_dir, file)
+
+    if shp_file:
+
+        gdf = gpd.read_file(shp_file)
+
+        st.success("Shapefile cargado correctamente")
+
+        # mostrar columnas
+        st.write("Columnas detectadas:")
+        st.write(gdf.columns)
+
+        # mostrar tabla
+        st.dataframe(gdf.head())
+
+    else:
+        st.error("No se encontró archivo .shp")
