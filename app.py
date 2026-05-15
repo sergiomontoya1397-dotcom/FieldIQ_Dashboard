@@ -10,8 +10,13 @@ from streamlit_folium import st_folium
 
 st.set_page_config(page_title="Field-IQ Dashboard", layout="wide")
 
+# =========================
+# ESTILOS
+# =========================
+
 st.markdown("""
 <style>
+
 .report-title {
     background:#064d1b;
     color:white;
@@ -21,6 +26,7 @@ st.markdown("""
     font-size:36px;
     font-weight:800;
 }
+
 .section-title {
     background:#064d1b;
     color:white;
@@ -29,6 +35,7 @@ st.markdown("""
     font-weight:700;
     text-align:center;
 }
+
 .card {
     background:white;
     border-radius:12px;
@@ -37,6 +44,7 @@ st.markdown("""
     border:1px solid #ddd;
     margin-bottom:14px;
 }
+
 .legend-row {
     display:flex;
     align-items:center;
@@ -44,11 +52,13 @@ st.markdown("""
     margin:10px 0;
     font-size:16px;
 }
+
 .color-box {
     width:30px;
     height:24px;
     border:1px solid #555;
 }
+
 .eval-good {
     background:#e8f5e9;
     border:2px solid #2e7d32;
@@ -57,6 +67,7 @@ st.markdown("""
     color:#1b5e20;
     text-align:center;
 }
+
 .eval-bad {
     background:#ffebee;
     border:2px solid #c62828;
@@ -65,8 +76,13 @@ st.markdown("""
     color:#b71c1c;
     text-align:center;
 }
+
 </style>
 """, unsafe_allow_html=True)
+
+# =========================
+# SIDEBAR
+# =========================
 
 st.sidebar.header("⚙️ Parámetros")
 
@@ -90,6 +106,10 @@ uploaded_file = st.file_uploader(
     type=["zip"]
 )
 
+# =========================
+# COLORES
+# =========================
+
 colores = {
     "Clase 3: < -10%": "#FF0000",
     "Clase 2: -5% a -10%": "#FFFF00",
@@ -106,7 +126,12 @@ orden = [
     "Clase 5: > +10%",
 ]
 
+# =========================
+# FUNCIONES
+# =========================
+
 def nombres_rangos(objetivo):
+
     return {
         "Clase 3: < -10%": f"< {objetivo * 0.90:.1f}",
         "Clase 2: -5% a -10%": f"{objetivo * 0.90:.1f} - {objetivo * 0.95:.1f}",
@@ -135,11 +160,18 @@ def cargar_shapefile(uploaded_file):
     shp_file = None
 
     for root, dirs, files in os.walk(temp_dir):
+
         for file in files:
+
             if file.lower().endswith(".shp"):
-                shp_file = os.path.join(root, file)
+
+                shp_file = os.path.join(
+                    root,
+                    file
+                )
 
     if shp_file is None:
+
         st.error("No se encontró archivo .shp")
         st.stop()
 
@@ -214,20 +246,21 @@ def mostrar_leyenda():
 
     for cat in orden:
 
-        color = colores[cat]
-        rango = nombres_cortos[cat]
-
         st.markdown(
             f"""
             <div class="legend-row">
                 <div class="color-box"
-                     style="background:{color};">
+                     style="background:{colores[cat]};">
                 </div>
-                <span>{rango}</span>
+                <span>{nombres_cortos[cat]}</span>
             </div>
             """,
             unsafe_allow_html=True
         )
+
+# =========================
+# MAIN
+# =========================
 
 if uploaded_file:
 
@@ -238,7 +271,7 @@ if uploaded_file:
     if "AppliedRat" not in gdf_original.columns:
 
         st.error(
-            "No se encontró la columna 'AppliedRat'"
+            "No se encontró la columna AppliedRat"
         )
 
         st.write(
@@ -247,10 +280,12 @@ if uploaded_file:
 
         st.stop()
 
+    # Mapa
     gdf_mapa = gdf_original.to_crs(
         epsg=4326
     )
 
+    # Área
     gdf_area = gdf_original.to_crs(
         epsg=3857
     )
@@ -306,6 +341,8 @@ if uploaded_file:
         .map(nombres_cortos)
     )
 
+    # KPIs
+
     def get_pct(cat):
 
         fila = resumen[
@@ -333,21 +370,31 @@ if uploaded_file:
         get_pct("Clase 5: > +10%")
     )
 
+    # Evaluación
+
     if opt_pct >= 85:
+
         evaluacion = "EXCELENTE"
         eval_class = "eval-good"
 
     elif opt_pct >= 70:
+
         evaluacion = "BUENA"
         eval_class = "eval-good"
 
     elif opt_pct >= 50:
+
         evaluacion = "REGULAR"
         eval_class = "eval-bad"
 
     else:
+
         evaluacion = "DEFICIENTE"
         eval_class = "eval-bad"
+
+    # =========================
+    # GRAFICOS
+    # =========================
 
     fig_dashboard = px.pie(
         resumen,
@@ -377,6 +424,10 @@ if uploaded_file:
         textinfo="percent"
     )
 
+    # =========================
+    # TABLA
+    # =========================
+
     tabla = resumen.copy()
 
     tabla["Área (ha)"] = (
@@ -391,10 +442,18 @@ if uploaded_file:
         ["Rango", "Área (ha)", "% del total"]
     ]
 
+    # =========================
+    # TABS
+    # =========================
+
     tab1, tab2 = st.tabs([
         "📊 Dashboard interactivo",
         "📄 Reporte para cliente"
     ])
+
+    # =========================
+    # TAB 1
+    # =========================
 
     with tab1:
 
@@ -451,6 +510,10 @@ if uploaded_file:
                 tabla,
                 use_container_width=True
             )
+
+    # =========================
+    # TAB 2
+    # =========================
 
     with tab2:
 
@@ -534,6 +597,7 @@ if uploaded_file:
             st.markdown(
                 f"""
                 <div class="card">
+
                 <div class="section-title">
                 RESUMEN
                 </div>
@@ -553,6 +617,7 @@ if uploaded_file:
                 <b>{sobre_pct:.2f}%</b>
                 sobre-aplicado
                 </li>
+
                 </ul>
 
                 </div>
