@@ -2,7 +2,9 @@ import streamlit as st
 import geopandas as gpd
 import pandas as pd
 import plotly.express as px
-import tempfile, zipfile, os
+import tempfile
+import zipfile
+import os
 import folium
 from streamlit_folium import st_folium
 
@@ -33,16 +35,18 @@ st.markdown("""
     padding:18px;
     box-shadow:0 3px 12px rgba(0,0,0,0.12);
     border:1px solid #ddd;
+    margin-bottom:14px;
 }
 .legend-row {
     display:flex;
     align-items:center;
     gap:10px;
     margin:10px 0;
+    font-size:16px;
 }
 .color-box {
-    width:28px;
-    height:22px;
+    width:30px;
+    height:24px;
     border:1px solid #555;
 }
 .eval-good {
@@ -87,13 +91,16 @@ orden = [
     "Clase 5: > +10%",
 ]
 
-nombres_cortos = {
-    "Clase 3: < -10%": f"< {objetivo*0.90:.1f}",
-    "Clase 2: -5% a -10%": f"{objetivo*0.90:.1f} - {objetivo*0.95:.1f}",
-    "Clase 1: ±5%": f"{objetivo*0.95:.1f} - {objetivo*1.05:.1f}",
-    "Clase 4: +5% a +10%": f"{objetivo*1.05:.1f} - {objetivo*1.10:.1f}",
-    "Clase 5: > +10%": f"> {objetivo*1.10:.1f}",
-}
+def nombres_rangos(objetivo):
+    return {
+        "Clase 3: < -10%": f"< {objetivo * 0.90:.1f}",
+        "Clase 2: -5% a -10%": f"{objetivo * 0.90:.1f} - {objetivo * 0.95:.1f}",
+        "Clase 1: ±5%": f"{objetivo * 0.95:.1f} - {objetivo * 1.05:.1f}",
+        "Clase 4: +5% a +10%": f"{objetivo * 1.05:.1f} - {objetivo * 1.10:.1f}",
+        "Clase 5: > +10%": f"> {objetivo * 1.10:.1f}",
+    }
+
+nombres_cortos = nombres_rangos(objetivo)
 
 def cargar_shapefile(uploaded_file):
     temp_dir = tempfile.mkdtemp()
@@ -106,6 +113,7 @@ def cargar_shapefile(uploaded_file):
         zip_ref.extractall(temp_dir)
 
     shp_file = None
+
     for root, dirs, files in os.walk(temp_dir):
         for file in files:
             if file.lower().endswith(".shp"):
@@ -135,7 +143,11 @@ def crear_mapa(gdf_mapa):
         gdf_mapa.geometry.centroid.x.mean()
     ]
 
-    m = folium.Map(location=centro, zoom_start=17, tiles="Esri.WorldImagery")
+    mapa = folium.Map(
+        location=centro,
+        zoom_start=17,
+        tiles="Esri.WorldImagery"
+    )
 
     folium.GeoJson(
         gdf_mapa,
@@ -150,27 +162,36 @@ def crear_mapa(gdf_mapa):
             aliases=["Dosis:", "Rango:", "Área ha:"],
             localize=True
         )
-    ).add_to(m)
+    ).add_to(mapa)
 
-    return m
+    return mapa
 
-def leyenda_html():
-    html = '<div class="card"><div class="section-title">LEYENDA</div><h4>Rango de dosis</h4>'
+def mostrar_leyenda():
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">LEYENDA</div>', unsafe_allow_html=True)
+    st.markdown("### Rango de dosis")
+
     for cat in orden:
-        html += f"""
-        <div class="legend-row">
-            <div class="color-box" style="background:{colores[cat]}"></div>
-            <span>{nombres_cortos[cat]}</span>
-        </div>
-        """
-    html += "</div>"
-    return html
+        color = colores[cat]
+        rango = nombres_cortos[cat]
+        st.markdown(
+            f"""
+            <div class="legend-row">
+                <div class="color-box" style="background:{color};"></div>
+                <span>{rango}</span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 if uploaded_file:
     gdf_original = cargar_shapefile(uploaded_file)
 
     if "AppliedRat" not in gdf_original.columns:
         st.error("No se encontró la columna 'AppliedRat'.")
+        st.write("Columnas disponibles:")
         st.write(list(gdf_original.columns))
         st.stop()
 
@@ -187,7 +208,13 @@ if uploaded_file:
     resumen = gdf_mapa.groupby("Categoria")["Area_ha"].sum().reset_index()
     total = resumen["Area_ha"].sum()
     resumen["Porcentaje"] = resumen["Area_ha"] / total * 100
-    resumen["Categoria"] = pd.Categorical(resumen["Categoria"], categories=orden, ordered=True)
+
+    resumen["Categoria"] = pd.Categorical(
+        resumen["Categoria"],
+        categories=orden,
+        ordered=True
+    )
+
     resumen = resumen.sort_values("Categoria")
     resumen["Rango"] = resumen["Categoria"].map(nombres_cortos)
 
@@ -220,7 +247,11 @@ if uploaded_file:
         color_discrete_map=colores,
         hole=0.25
     )
-    fig.update_traces(textposition="inside", textinfo="percent")
+
+    fig.update_traces(
+        textposition="inside",
+        textinfo="percent"
+    )
 
     tabla = resumen.copy()
     tabla["Área (ha)"] = tabla["Area_ha"].round(3)
@@ -240,15 +271,30 @@ if uploaded_file:
         c4.metric("Sobre-aplicado", f"{sobre_pct:.2f}%")
 
         st.subheader("🗺️ Mapa de aplicación")
-        st_folium(crear_mapa(gdf_mapa), width=1200, height=600)
+        st_folium(
+            crear_mapa(gdf_mapa),
+            width=1200,
+            height=600,
+            key="mapa_dashboard"
+        )
 
         col1, col2 = st.columns(2)
+
         with col1:
             st.subheader("🥧 Distribución porcentual")
             st.plotly_chart(fig, use_container_width=True)
+
         with col2:
             st.subheader("📋 Tabla de porcentajes")
             st.dataframe(tabla, use_container_width=True)
+
+            csv = tabla.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "⬇️ Descargar tabla CSV",
+                csv,
+                "tabla_porcentajes.csv",
+                "text/csv"
+            )
 
     with tab2:
         st.markdown(
@@ -261,30 +307,51 @@ if uploaded_file:
         left, right = st.columns([1, 3])
 
         with left:
-            st.markdown(leyenda_html(), unsafe_allow_html=True)
-            st.markdown(f"""
-            <div class="card">
-                <div class="section-title">INFORMACIÓN</div>
-                <p><b>Lote:</b> {nombre_lote}</p>
-                <p><b>Dosis aplicada:</b> {objetivo} {unidad}</p>
-                <p><b>Unidad:</b> {unidad}</p>
-            </div>
-            """, unsafe_allow_html=True)
+            mostrar_leyenda()
+
+            st.markdown(
+                f"""
+                <div class="card">
+                    <div class="section-title">INFORMACIÓN</div>
+                    <p><b>Lote:</b> {nombre_lote}</p>
+                    <p><b>Dosis aplicada:</b> {objetivo} {unidad}</p>
+                    <p><b>Unidad:</b> {unidad}</p>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
         with right:
-            st.markdown('<div class="section-title">MAPA DE DISTRIBUCIÓN DE DOSIS</div>', unsafe_allow_html=True)
-            st_folium(crear_mapa(gdf_mapa), width=950, height=520)
+            st.markdown(
+                '<div class="section-title">MAPA DE DISTRIBUCIÓN DE DOSIS</div>',
+                unsafe_allow_html=True
+            )
+
+            st_folium(
+                crear_mapa(gdf_mapa),
+                width=950,
+                height=520,
+                key="mapa_reporte"
+            )
 
         st.markdown("<br>", unsafe_allow_html=True)
 
         col_g, col_t = st.columns(2)
 
         with col_g:
-            st.markdown('<div class="section-title">DISTRIBUCIÓN PORCENTUAL POR RANGO</div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="section-title">DISTRIBUCIÓN PORCENTUAL POR RANGO</div>',
+                unsafe_allow_html=True
+            )
+
             st.plotly_chart(fig, use_container_width=True)
 
         with col_t:
-            st.markdown('<div class="section-title">TABLA DE PORCENTAJES DE ÁREA POR RANGO</div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="section-title">TABLA DE PORCENTAJES DE ÁREA POR RANGO</div>',
+                unsafe_allow_html=True
+            )
+
             st.dataframe(tabla, use_container_width=True)
             st.markdown(f"### TOTAL: **{total:.3f} ha**")
 
@@ -293,25 +360,31 @@ if uploaded_file:
         r1, r2 = st.columns([2, 1])
 
         with r1:
-            st.markdown(f"""
-            <div class="card">
-                <div class="section-title">RESUMEN E INTERPRETACIÓN</div>
-                <ul>
-                    <li><b>{opt_pct:.2f}%</b> del área está dentro del rango óptimo ±5%.</li>
-                    <li><b>{sub_pct:.2f}%</b> del área está sub-aplicada.</li>
-                    <li><b>{sobre_pct:.2f}%</b> del área está sobre-aplicada.</li>
-                    <li>La evaluación se basa en el porcentaje dentro del rango óptimo.</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(
+                f"""
+                <div class="card">
+                    <div class="section-title">RESUMEN E INTERPRETACIÓN</div>
+                    <ul>
+                        <li><b>{opt_pct:.2f}%</b> del área está dentro del rango óptimo ±5%.</li>
+                        <li><b>{sub_pct:.2f}%</b> del área está sub-aplicada.</li>
+                        <li><b>{sobre_pct:.2f}%</b> del área está sobre-aplicada.</li>
+                        <li>La evaluación se basa en el porcentaje dentro del rango óptimo.</li>
+                    </ul>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
         with r2:
-            st.markdown(f"""
-            <div class="{eval_class}">
-                <h4>CALIDAD DE APLICACIÓN</h4>
-                <h1>{evaluacion}</h1>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(
+                f"""
+                <div class="{eval_class}">
+                    <h4>CALIDAD DE APLICACIÓN</h4>
+                    <h1>{evaluacion}</h1>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
 else:
     st.info("Carga un shapefile comprimido en .zip para comenzar.")
